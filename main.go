@@ -1,113 +1,121 @@
 package main
 
 import (
-	"encoding/json"
-	"flag"
+	"context"
+	"crypto/tls"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"mime"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
+	"xorm.io/xorm"
 )
 
-// ServerConfig 单个虚拟主机配置
-type ServerConfig struct {
-	ServerName  string `json:"server_name"`
-	Root        string `json:"root"`
-	EnableHTTPS bool   `json:"enable_https"` // 是否启用 HTTPS 并重定向
+// Server 对应 servers 表
+type Server struct {
+	Id            int    `xorm:"pk autoincr"`
+	ServerName    string `xorm:"unique notnull"`
+	ActiveVersion string `xorm:"default 'v1'"`
+	EnableHttps   bool   `xorm:"default 0"`
 }
 
-// SSLConfig SSL 证书配置
-type SSLConfig struct {
-	CertFile string `json:"cert_file"`
-	KeyFile  string `json:"key_file"`
+// ServerVersion 对应 server_versions 表（无 root 字段）
+type ServerVersion struct {
+	Id         int    `xorm:"pk autoincr"`
+	ServerName string `xorm:"notnull"`
+	Version    string `xorm:"notnull"`
+	BucketPath string `xorm:"notnull"`
 }
 
-// Config 总配置
-type Config struct {
-	Servers     []ServerConfig `json:"servers"`
-	SSL         SSLConfig      `json:"ssl"`
-	HTTPAddr    string         `json:"http_addr"`
-	HTTPSAddr   string         `json:"https_addr"`
-	MaxBodySize int64          `json:"max_body_size"`
+// GlobalConfig 对应 global_config 表
+type GlobalConfig struct {
+	Id             int    `xorm:"pk autoincr"`
+	HttpAddr       string `xorm:"default ':80'"`
+	HttpsAddr      string `xorm:"default ':443'"`
+	MaxBodySize    int    `xorm:"default 5242880"`
+	CertPem        string `xorm:"text notnull"`
+	KeyPem         string `xorm:"text notnull"`
+	MinioEndpoint  string `xorm:"notnull"`
+	MinioAccessKey string `xorm:"notnull"`
+	MinioSecretKey string `xorm:"notnull"`
+	MinioUseSsl    bool   `xorm:"default 0"`
+	MinioBucket    string `xorm:"notnull"`
 }
 
-// vhostHandler 虚拟主机处理器（HTTP 和 HTTPS 共用逻辑）
+// vhostHandler 虚拟主机处理器
 type vhostHandler struct {
-	hostRootMap  map[string]string // server_name -> root（有效主机）
-	hostHTTPSMap map[string]bool   // server_name -> 是否启用 HTTPS
-	invalidHosts map[string]string // server_name -> 错误原因
+	engine      *xorm.Engine
+	minioClient *minio.Client
+	bucket      string
 }
 
-// serveStatic 提供静态文件服务（含 SPA fallback）
-func (h *vhostHandler) serveStatic(w http.ResponseWriter, r *http.Request, root string) {
+// serveFromMinIO 从 MinIO 读取文件
+func (h *vhostHandler) serveFromMinIO(w http.ResponseWriter, r *http.Request, bucketPath string) {
 	start := time.Now()
+	ctx := context.Background()
 
-	cleanPath := filepath.Clean(r.URL.Path)
-	if cleanPath == "." {
-		cleanPath = "/"
-	}
-	fullPath := filepath.Join(root, cleanPath)
-
-	// 路径安全检查
-	if !strings.HasPrefix(fullPath, filepath.Clean(root)+string(os.PathSeparator)) &&
-		fullPath != filepath.Clean(root) {
-		http.NotFound(w, r)
-		logRequest(r, root, http.StatusNotFound, 0, start)
-		return
+	// 构造对象路径: bucketPath/请求路径
+	basePath := strings.TrimPrefix(bucketPath, "/")
+	requestPath := strings.TrimPrefix(r.URL.Path, "/")
+	var objectPath string
+	if requestPath == "" {
+		objectPath = fmt.Sprintf("%s/index.html", basePath)
+	} else {
+		objectPath = fmt.Sprintf("%s/%s", basePath, requestPath)
 	}
 
-	info, err := os.Stat(fullPath)
-	if err == nil && info.IsDir() {
-		indexPath := filepath.Join(fullPath, "index.html")
-		if _, err := os.Stat(indexPath); err == nil {
-			serveFile(w, r, indexPath)
-			logRequest(r, root, http.StatusOK, 0, start)
+	obj, err := h.minioClient.GetObject(ctx, h.bucket, objectPath, minio.GetObjectOptions{})
+	if err != nil {
+		if minio.ToErrorResponse(err).Code == "NoSuchKey" {
+			// SPA fallback: 返回 index.html
+			fallbackPath := fmt.Sprintf("%s/index.html", basePath)
+			fallbackObj, fallbackErr := h.minioClient.GetObject(ctx, h.bucket, fallbackPath, minio.GetObjectOptions{})
+			if fallbackErr != nil {
+				log.Printf("文件不存在且 fallback 失败: %s, err: %v", objectPath, fallbackErr)
+				http.NotFound(w, r)
+				logRequest(r, bucketPath, http.StatusNotFound, 0, start)
+				return
+			}
+			defer fallbackObj.Close()
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			size, _ := io.Copy(w, fallbackObj)
+			logRequest(r, bucketPath, http.StatusOK, size, start)
 			return
 		}
-	} else if err == nil && !info.IsDir() {
-		serveFile(w, r, fullPath)
-		logRequest(r, root, http.StatusOK, 0, start)
+		log.Printf("读取 MinIO 对象失败: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		logRequest(r, bucketPath, http.StatusInternalServerError, 0, start)
 		return
 	}
+	defer obj.Close()
 
-	// SPA fallback
-	spaFile := filepath.Join(root, "index.html")
-	if _, err := os.Stat(spaFile); err == nil {
-		serveFile(w, r, spaFile)
-		logRequest(r, root, http.StatusOK, 0, start)
-	} else {
-		http.NotFound(w, r)
-		logRequest(r, root, http.StatusNotFound, 0, start)
-	}
-}
-
-func serveFile(w http.ResponseWriter, r *http.Request, filePath string) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			http.NotFound(w, r)
+	stat, err := obj.Stat()
+	if err == nil {
+		ext := filepath.Ext(objectPath)
+		if ctype := mime.TypeByExtension(ext); ctype != "" {
+			w.Header().Set("Content-Type", ctype)
 		} else {
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			w.Header().Set("Content-Type", "application/octet-stream")
 		}
-		return
-	}
-	defer file.Close()
-
-	if ctype := mime.TypeByExtension(filepath.Ext(filePath)); ctype != "" {
-		w.Header().Set("Content-Type", ctype)
+		_ = stat // 可用于设置 ETag 等
 	} else {
 		w.Header().Set("Content-Type", "application/octet-stream")
 	}
-	http.ServeContent(w, r, filepath.Base(filePath), time.Time{}, file)
+	size, _ := io.Copy(w, obj)
+	logRequest(r, bucketPath, http.StatusOK, size, start)
 }
 
-func logRequest(r *http.Request, root string, status int, size int64, start time.Time) {
+func logRequest(r *http.Request, prefix string, status int, size int64, start time.Time) {
 	duration := time.Since(start)
-	log.Printf("%s - [%s] \"%s %s %s\" %d %d \"%s\" \"%s\" root=%s %.3f ms",
+	log.Printf("%s - [%s] \"%s %s %s\" %d %d \"%s\" \"%s\" prefix=%s %.3f ms",
 		r.RemoteAddr,
 		time.Now().Format("02/Jan/2006:15:04:05 -0700"),
 		r.Method,
@@ -117,35 +125,34 @@ func logRequest(r *http.Request, root string, status int, size int64, start time
 		size,
 		r.Header.Get("Referer"),
 		r.Header.Get("User-Agent"),
-		root,
+		prefix,
 		float64(duration.Microseconds())/1000.0,
 	)
 }
 
-// ServeHTTP 实现 http.Handler 接口（同时用于 HTTP 和 HTTPS）
+// ServeHTTP 实现 http.Handler 接口
 func (h *vhostHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	host := r.Host
 	if colonIdx := strings.Index(host, ":"); colonIdx != -1 {
 		host = host[:colonIdx]
 	}
 
-	// 无效主机（配置错误）
-	if reason, ok := h.invalidHosts[host]; ok {
-		log.Printf("请求被拒绝: 域名 %s 无效 (%s)", host, reason)
-		http.Error(w, fmt.Sprintf("Host %s is misconfigured", host), http.StatusNotFound)
+	// 1. 查询域名主表获取 active_version
+	var server Server
+	has, err := h.engine.Where("server_name = ?", host).Get(&server)
+	if err != nil {
+		log.Printf("查询域名配置失败: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
-
-	// 有效主机
-	root, ok := h.hostRootMap[host]
-	if !ok {
-		http.Error(w, fmt.Sprintf("No such host: %s", host), http.StatusNotFound)
+	if !has {
 		log.Printf("未匹配域名 %s，返回 404", host)
+		http.Error(w, fmt.Sprintf("No such host: %s", host), http.StatusNotFound)
 		return
 	}
 
-	// 如果是 HTTP 请求且该域名启用了 HTTPS，则重定向到 HTTPS
-	if r.TLS == nil && h.hostHTTPSMap[host] {
+	// HTTP -> HTTPS 重定向
+	if r.TLS == nil && server.EnableHttps {
 		target := "https://" + host + r.URL.Path
 		if r.URL.RawQuery != "" {
 			target += "?" + r.URL.RawQuery
@@ -155,111 +162,145 @@ func (h *vhostHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 正常服务静态文件
-	h.serveStatic(w, r, root)
+	// 2. 根据域名和 active_version 查询版本表获取 bucket_path
+	var version ServerVersion
+	has, err = h.engine.Where("server_name = ? AND version = ?", host, server.ActiveVersion).Get(&version)
+	if err != nil {
+		log.Printf("查询版本配置失败: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	if !has {
+		log.Printf("域名 %s 的版本 %s 不存在", host, server.ActiveVersion)
+		http.Error(w, "Version not found", http.StatusNotFound)
+		return
+	}
+
+	// 3. 从 MinIO 服务静态文件
+	h.serveFromMinIO(w, r, version.BucketPath)
+}
+
+// loadGlobalConfig 加载全局配置
+func loadGlobalConfig(dsn string) (*GlobalConfig, error) {
+	engine, err := xorm.NewEngine("mysql", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("连接数据库失败: %v", err)
+	}
+	defer engine.Close()
+
+	global := &GlobalConfig{}
+	has, err := engine.ID(1).Get(global)
+	if err != nil {
+		return nil, fmt.Errorf("读取全局配置失败: %v", err)
+	}
+	if !has {
+		return nil, fmt.Errorf("数据库中没有全局配置，请先插入一条记录 (id=1)")
+	}
+	return global, nil
 }
 
 func main() {
-	configPath := flag.String("config", "config.json", "配置文件路径")
-	flag.Parse()
+	dsn := "root:kd123456789@tcp(219.151.187.115:3306)/kenaito_vhost_gateway?charset=utf8mb4&parseTime=True&loc=Local"
 
-	data, err := os.ReadFile(*configPath)
+	global, err := loadGlobalConfig(dsn)
 	if err != nil {
-		log.Fatalf("读取配置文件失败: %v", err)
+		log.Fatalf("加载全局配置失败: %v", err)
 	}
 
-	var cfg Config
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		log.Fatalf("解析配置文件失败: %v", err)
+	engine, err := xorm.NewEngine("mysql", dsn)
+	if err != nil {
+		log.Fatalf("创建数据库引擎失败: %v", err)
 	}
+	engine.SetMaxIdleConns(10)
+	engine.SetMaxOpenConns(100)
+	engine.SetConnMaxLifetime(10 * time.Minute)
 
-	// 默认值设置
-	if len(cfg.Servers) == 0 {
-		log.Fatal("配置中至少需要一个 server")
+	// 初始化 MinIO 客户端
+	minioClient, err := minio.New(global.MinioEndpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(global.MinioAccessKey, global.MinioSecretKey, ""),
+		Secure: global.MinioUseSsl,
+	})
+	if err != nil {
+		log.Fatalf("初始化 MinIO 客户端失败: %v", err)
 	}
-	if cfg.HTTPAddr == "" {
-		cfg.HTTPAddr = ":80"
-	}
-	if cfg.HTTPSAddr == "" {
-		cfg.HTTPSAddr = ":443"
-	}
-	if cfg.MaxBodySize == 0 {
-		cfg.MaxBodySize = 5 << 20 // 5MB
-	}
+	log.Printf("MinIO 客户端初始化成功，Endpoint: %s, Bucket: %s", global.MinioEndpoint, global.MinioBucket)
 
-	// 构建主机映射
-	hostRootMap := make(map[string]string)
-	hostHTTPSMap := make(map[string]bool)
-	invalidHosts := make(map[string]string)
-
-	for _, srv := range cfg.Servers {
-		if srv.ServerName == "" || srv.Root == "" {
-			invalidHosts[srv.ServerName] = "server_name 或 root 为空"
-			log.Printf("警告: 域名 %s 配置无效（server_name 或 root 为空）", srv.ServerName)
-			continue
-		}
-		if info, err := os.Stat(srv.Root); err != nil || !info.IsDir() {
-			invalidHosts[srv.ServerName] = fmt.Sprintf("根目录不存在或不是目录: %s", srv.Root)
-			log.Printf("警告: 域名 %s 无效 - %s", srv.ServerName, invalidHosts[srv.ServerName])
-			continue
-		}
-		hostRootMap[srv.ServerName] = srv.Root
-		hostHTTPSMap[srv.ServerName] = srv.EnableHTTPS
-		log.Printf("虚拟主机: %s -> %s (HTTPS: %v)", srv.ServerName, srv.Root, srv.EnableHTTPS)
+	ctx := context.Background()
+	exists, err := minioClient.BucketExists(ctx, global.MinioBucket)
+	if err != nil {
+		log.Fatalf("检查 MinIO 存储桶失败: %v", err)
 	}
-
-	if len(hostRootMap) == 0 {
-		log.Fatal("没有有效的虚拟主机配置，无法启动服务")
+	if !exists {
+		log.Fatalf("MinIO 存储桶 %s 不存在，请先创建", global.MinioBucket)
 	}
 
 	handler := &vhostHandler{
-		hostRootMap:  hostRootMap,
-		hostHTTPSMap: hostHTTPSMap,
-		invalidHosts: invalidHosts,
+		engine:      engine,
+		minioClient: minioClient,
+		bucket:      global.MinioBucket,
 	}
 
-	// HTTP 服务
+	httpAddr := global.HttpAddr
+	if httpAddr == "" {
+		httpAddr = ":80"
+	}
+	httpsAddr := global.HttpsAddr
+	if httpsAddr == "" {
+		httpsAddr = ":443"
+	}
+	if global.MaxBodySize == 0 {
+		global.MaxBodySize = 5 << 20
+	}
+	maxHeaderBytes := 1 * 1024 * 1024
+
 	httpServer := &http.Server{
-		Addr:           cfg.HTTPAddr,
+		Addr:           httpAddr,
 		Handler:        handler,
 		ReadTimeout:    30 * time.Second,
 		WriteTimeout:   30 * time.Second,
-		MaxHeaderBytes: 1 << 20, // 固定 1MB
+		MaxHeaderBytes: maxHeaderBytes,
 	}
 	go func() {
-		log.Printf("HTTP 服务启动，监听 %s", cfg.HTTPAddr)
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Printf("HTTP 服务启动，监听 %s", httpAddr)
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("HTTP 服务失败: %v", err)
 		}
 	}()
 
-	// 检查是否需要 HTTPS
-	needHTTPS := false
-	for _, enable := range hostHTTPSMap {
-		if enable {
-			needHTTPS = true
-			break
-		}
+	// 检查是否有启用 HTTPS 的域名
+	var httpsCount int64
+	httpsCount, err = engine.Where("enable_https = ?", true).Count(&Server{})
+	if err != nil {
+		log.Printf("查询 HTTPS 主机失败: %v", err)
 	}
-	if !needHTTPS {
+	if httpsCount == 0 {
 		log.Printf("未启用任何 HTTPS 主机，仅运行 HTTP 服务")
-		select {} // 永久阻塞
+		select {}
 	}
 
-	if cfg.SSL.CertFile == "" || cfg.SSL.KeyFile == "" {
-		log.Fatal("存在启用 HTTPS 的主机，但未配置 ssl.cert_file 和 ssl.key_file")
+	if global.CertPem == "" || global.KeyPem == "" {
+		log.Fatal("存在启用 HTTPS 的主机，但数据库 global_config 中 CertPem 或 KeyPem 为空")
+	}
+	cert, err := tls.X509KeyPair([]byte(global.CertPem), []byte(global.KeyPem))
+	if err != nil {
+		log.Fatalf("加载证书失败: %v", err)
 	}
 
-	// HTTPS 服务
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	}
+
 	httpsServer := &http.Server{
-		Addr:           cfg.HTTPSAddr,
+		Addr:           httpsAddr,
 		Handler:        handler,
 		ReadTimeout:    30 * time.Second,
 		WriteTimeout:   30 * time.Second,
-		MaxHeaderBytes: 1 << 20, // 固定 1MB
+		MaxHeaderBytes: maxHeaderBytes,
+		TLSConfig:      tlsConfig,
 	}
-	log.Printf("HTTPS 服务启动，监听 %s", cfg.HTTPSAddr)
-	if err := httpsServer.ListenAndServeTLS(cfg.SSL.CertFile, cfg.SSL.KeyFile); err != nil {
+	log.Printf("HTTPS 服务启动，监听 %s", httpsAddr)
+	if err := httpsServer.ListenAndServeTLS("", ""); err != nil {
 		log.Fatalf("HTTPS 服务失败: %v", err)
 	}
 }
