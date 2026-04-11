@@ -1,8 +1,12 @@
 module kenaito-vhost-gateway
 
-go 1.21
+go 1.21.0
+
+toolchain go1.23.4
 
 require (
-    github.com/go-sql-driver/mysql v1.8.1
-    xorm.io/xorm v1.3.9
+	github.com/go-sql-driver/mysql v1.9.3
+	xorm.io/xorm v1.3.9
+	filippo.io/edwards25519 v1.1.1 // indirect
 )
+

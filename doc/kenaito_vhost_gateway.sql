@@ -38,10 +38,10 @@ CREATE TABLE `global_config`  (
 INSERT INTO `global_config` VALUES (1, ':80', ':443', 5242880, 1, 'xx', 'xx');
 
 -- ----------------------------
--- Table structure for servers
+-- Table structure for server
 -- ----------------------------
-DROP TABLE IF EXISTS `servers`;
-CREATE TABLE `servers`  (
+DROP TABLE IF EXISTS `server`;
+CREATE TABLE `server`  (
   `id` int NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `server_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '域名（server_name）',
   `root` varchar(1024) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '静态文件根目录路径',
@@ -53,7 +53,7 @@ CREATE TABLE `servers`  (
 -- ----------------------------
 -- Records of servers
 -- ----------------------------
-INSERT INTO `servers` VALUES (1, 'cutejava.odboy.com', 'E:\\DevFiles\\dist\\cutejava-front', 1);
-INSERT INTO `servers` VALUES (2, 'kenaito-dns.odboy.cn', 'E:\\DevFiles\\dist\\kenaito-dns-front', 0);
+INSERT INTO `server` VALUES (1, 'cutejava.odboy.com', 'E:\\DevFiles\\dist\\cutejava-front', 0);
+INSERT INTO `server` VALUES (2, 'kenaito-dns.odboy.cn', 'E:\\DevFiles\\dist\\kenaito-dns-front', 1);
 
 SET FOREIGN_KEY_CHECKS = 1;
