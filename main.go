@@ -1,7 +1,7 @@
 package main
 
 import (
-	"encoding/json"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
@@ -11,35 +11,35 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	_ "github.com/go-sql-driver/mysql"
+	"xorm.io/xorm"
 )
 
-// ServerConfig 单个虚拟主机配置
-type ServerConfig struct {
-	ServerName  string `json:"server_name"`
-	Root        string `json:"root"`
-	EnableHTTPS bool   `json:"enable_https"` // 是否启用 HTTPS 并重定向
+// Server 对应数据库 servers 表
+type Server struct {
+	Id          int64  `xorm:"pk autoincr"`
+	ServerName  string `xorm:"unique notnull"`
+	Root        string `xorm:"notnull"`
+	EnableHTTPS bool   `xorm:"default 0"`
 }
 
-// SSLConfig SSL 证书配置
-type SSLConfig struct {
-	CertFile string `json:"cert_file"`
-	KeyFile  string `json:"key_file"`
+// GlobalConfig 对应数据库 global_config 表（单条记录，id=1）
+type GlobalConfig struct {
+	Id          int64  `xorm:"pk autoincr"`
+	HTTPAddr    string `xorm:"default ':80'"`
+	HTTPSAddr   string `xorm:"default ':443'"`
+	MaxBodySize int64  `xorm:"default 5242880"` // 5MB
+	MaxHeaderMB int    `xorm:"default 1"`       // 单位 MB
+	CertPEM     string `xorm:"text notnull"`    // 证书 PEM 文本
+	KeyPEM      string `xorm:"text notnull"`    // 私钥 PEM 文本
 }
 
-// Config 总配置
-type Config struct {
-	Servers     []ServerConfig `json:"servers"`
-	SSL         SSLConfig      `json:"ssl"`
-	HTTPAddr    string         `json:"http_addr"`
-	HTTPSAddr   string         `json:"https_addr"`
-	MaxBodySize int64          `json:"max_body_size"`
-}
-
-// vhostHandler 虚拟主机处理器（HTTP 和 HTTPS 共用逻辑）
+// vhostHandler 虚拟主机处理器
 type vhostHandler struct {
-	hostRootMap  map[string]string // server_name -> root（有效主机）
-	hostHTTPSMap map[string]bool   // server_name -> 是否启用 HTTPS
-	invalidHosts map[string]string // server_name -> 错误原因
+	hostRootMap  map[string]string // server_name -> root
+	hostHTTPSMap map[string]bool   // server_name -> enable_https
+	invalidHosts map[string]string // 无效主机（如根目录不存在）
 }
 
 // serveStatic 提供静态文件服务（含 SPA fallback）
@@ -122,21 +122,19 @@ func logRequest(r *http.Request, root string, status int, size int64, start time
 	)
 }
 
-// ServeHTTP 实现 http.Handler 接口（同时用于 HTTP 和 HTTPS）
+// ServeHTTP 实现 http.Handler 接口
 func (h *vhostHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	host := r.Host
 	if colonIdx := strings.Index(host, ":"); colonIdx != -1 {
 		host = host[:colonIdx]
 	}
 
-	// 无效主机（配置错误）
 	if reason, ok := h.invalidHosts[host]; ok {
 		log.Printf("请求被拒绝: 域名 %s 无效 (%s)", host, reason)
 		http.Error(w, fmt.Sprintf("Host %s is misconfigured", host), http.StatusNotFound)
 		return
 	}
 
-	// 有效主机
 	root, ok := h.hostRootMap[host]
 	if !ok {
 		http.Error(w, fmt.Sprintf("No such host: %s", host), http.StatusNotFound)
@@ -144,7 +142,7 @@ func (h *vhostHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 如果是 HTTP 请求且该域名启用了 HTTPS，则重定向到 HTTPS
+	// HTTP 请求且启用了 HTTPS 则重定向
 	if r.TLS == nil && h.hostHTTPSMap[host] {
 		target := "https://" + host + r.URL.Path
 		if r.URL.RawQuery != "" {
@@ -155,44 +153,50 @@ func (h *vhostHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 正常服务静态文件
 	h.serveStatic(w, r, root)
 }
 
-func main() {
-	configPath := flag.String("config", "config.json", "配置文件路径")
-	flag.Parse()
-
-	data, err := os.ReadFile(*configPath)
+// loadConfigFromDB 从 MySQL 数据库加载全局配置和 servers 列表
+func loadConfigFromDB(dsn string) (*GlobalConfig, *vhostHandler, error) {
+	engine, err := xorm.NewEngine("mysql", dsn)
 	if err != nil {
-		log.Fatalf("读取配置文件失败: %v", err)
+		return nil, nil, fmt.Errorf("连接数据库失败: %v", err)
+	}
+	defer engine.Close()
+
+	// 设置时区等（可选）
+	engine.SetConnMaxLifetime(10 * time.Second)
+
+	// 同步表结构
+	if err := engine.Sync2(new(Server), new(GlobalConfig)); err != nil {
+		return nil, nil, fmt.Errorf("同步表结构失败: %v", err)
 	}
 
-	var cfg Config
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		log.Fatalf("解析配置文件失败: %v", err)
+	// 读取全局配置（id=1）
+	global := &GlobalConfig{}
+	has, err := engine.ID(1).Get(global)
+	if err != nil {
+		return nil, nil, fmt.Errorf("读取全局配置失败: %v", err)
+	}
+	if !has {
+		return nil, nil, fmt.Errorf("数据库中没有全局配置，请先插入一条记录 (id=1)")
 	}
 
-	// 默认值设置
-	if len(cfg.Servers) == 0 {
-		log.Fatal("配置中至少需要一个 server")
+	// 读取所有 server
+	var servers []Server
+	if err := engine.Find(&servers); err != nil {
+		return nil, nil, fmt.Errorf("读取 servers 失败: %v", err)
 	}
-	if cfg.HTTPAddr == "" {
-		cfg.HTTPAddr = ":80"
-	}
-	if cfg.HTTPSAddr == "" {
-		cfg.HTTPSAddr = ":443"
-	}
-	if cfg.MaxBodySize == 0 {
-		cfg.MaxBodySize = 5 << 20 // 5MB
+	if len(servers) == 0 {
+		return nil, nil, fmt.Errorf("数据库中没有配置任何 server，请先插入")
 	}
 
-	// 构建主机映射
+	// 构建映射
 	hostRootMap := make(map[string]string)
 	hostHTTPSMap := make(map[string]bool)
 	invalidHosts := make(map[string]string)
 
-	for _, srv := range cfg.Servers {
+	for _, srv := range servers {
 		if srv.ServerName == "" || srv.Root == "" {
 			invalidHosts[srv.ServerName] = "server_name 或 root 为空"
 			log.Printf("警告: 域名 %s 配置无效（server_name 或 root 为空）", srv.ServerName)
@@ -209,7 +213,7 @@ func main() {
 	}
 
 	if len(hostRootMap) == 0 {
-		log.Fatal("没有有效的虚拟主机配置，无法启动服务")
+		return nil, nil, fmt.Errorf("没有有效的虚拟主机配置")
 	}
 
 	handler := &vhostHandler{
@@ -217,17 +221,48 @@ func main() {
 		hostHTTPSMap: hostHTTPSMap,
 		invalidHosts: invalidHosts,
 	}
+	return global, handler, nil
+}
 
-	// HTTP 服务
+func main() {
+	dsn := flag.String("dsn", "", "MySQL 连接字符串，如: user:password@tcp(127.0.0.1:3306)/gateway?charset=utf8mb4&parseTime=True&loc=Local")
+	flag.Parse()
+
+	if *dsn == "" {
+		log.Fatal("必须通过 -dsn 参数指定 MySQL 连接字符串")
+	}
+
+	// 从数据库加载配置
+	global, handler, err := loadConfigFromDB(*dsn)
+	if err != nil {
+		log.Fatalf("加载配置失败: %v", err)
+	}
+
+	// 设置默认值
+	if global.HTTPAddr == "" {
+		global.HTTPAddr = ":80"
+	}
+	if global.HTTPSAddr == "" {
+		global.HTTPSAddr = ":443"
+	}
+	if global.MaxBodySize == 0 {
+		global.MaxBodySize = 5 << 20
+	}
+	if global.MaxHeaderMB == 0 {
+		global.MaxHeaderMB = 1
+	}
+	maxHeaderBytes := global.MaxHeaderMB * 1024 * 1024
+
+	// 启动 HTTP 服务
 	httpServer := &http.Server{
-		Addr:           cfg.HTTPAddr,
+		Addr:           global.HTTPAddr,
 		Handler:        handler,
 		ReadTimeout:    30 * time.Second,
 		WriteTimeout:   30 * time.Second,
-		MaxHeaderBytes: 1 << 20, // 固定 1MB
+		MaxHeaderBytes: maxHeaderBytes,
 	}
 	go func() {
-		log.Printf("HTTP 服务启动，监听 %s", cfg.HTTPAddr)
+		log.Printf("HTTP 服务启动，监听 %s", global.HTTPAddr)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("HTTP 服务失败: %v", err)
 		}
@@ -235,7 +270,7 @@ func main() {
 
 	// 检查是否需要 HTTPS
 	needHTTPS := false
-	for _, enable := range hostHTTPSMap {
+	for _, enable := range handler.hostHTTPSMap {
 		if enable {
 			needHTTPS = true
 			break
@@ -246,20 +281,32 @@ func main() {
 		select {} // 永久阻塞
 	}
 
-	if cfg.SSL.CertFile == "" || cfg.SSL.KeyFile == "" {
-		log.Fatal("存在启用 HTTPS 的主机，但未配置 ssl.cert_file 和 ssl.key_file")
+	// 从数据库中的 PEM 文本加载证书
+	if global.CertPEM == "" || global.KeyPEM == "" {
+		log.Fatal("存在启用 HTTPS 的主机，但数据库 global_config 中 CertPEM 或 KeyPEM 为空")
+	}
+	cert, err := tls.X509KeyPair([]byte(global.CertPEM), []byte(global.KeyPEM))
+	if err != nil {
+		log.Fatalf("加载证书失败: %v", err)
 	}
 
-	// HTTPS 服务
+	// 配置 TLS
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	}
+
+	// 启动 HTTPS 服务
 	httpsServer := &http.Server{
-		Addr:           cfg.HTTPSAddr,
+		Addr:           global.HTTPSAddr,
 		Handler:        handler,
 		ReadTimeout:    30 * time.Second,
 		WriteTimeout:   30 * time.Second,
-		MaxHeaderBytes: 1 << 20, // 固定 1MB
+		MaxHeaderBytes: maxHeaderBytes,
+		TLSConfig:      tlsConfig,
 	}
-	log.Printf("HTTPS 服务启动，监听 %s", cfg.HTTPSAddr)
-	if err := httpsServer.ListenAndServeTLS(cfg.SSL.CertFile, cfg.SSL.KeyFile); err != nil {
+	log.Printf("HTTPS 服务启动，监听 %s", global.HTTPSAddr)
+	if err := httpsServer.ListenAndServeTLS("", ""); err != nil {
 		log.Fatalf("HTTPS 服务失败: %v", err)
 	}
 }
