@@ -11,31 +11,6 @@
 - Nginx 风格访问日志
 - 路径遍历防护
 
-## 配置文件示例 (`config.json`)
-
-```json
-{
-  "servers": [
-    {
-      "server_name": "example1.odboy.com",
-      "root": "/var/www/example1/dist"
-    },
-    {
-      "server_name": "example2.odboy.com",
-      "root": "/var/www/example2/dist"
-    }
-  ],
-  "ssl": {
-    "cert_file": "/path/to/cert.pem",
-    "key_file": "/path/to/key.pem"
-  },
-  "http_addr": ":80",
-  "https_addr": ":443",
-  "http_redirect": true,
-  "max_body_size": 5242880
-}
-```
-
 ## 快速开始
 
 ```shell
@@ -46,7 +21,13 @@ go build -o kenaito-vhost-gateway main.go
 ./kenaito-vhost-gateway -config config.json
 ```
 
-## 命令行参数
+## 版本迭代
 
-- config：配置文件路径（默认 config.json）
-
+- v1.0.0
+    - 配置文件
+- v1.0.1
+    - mysql数据库可配置
+- v1.0.3
+    - mysql数据库可配置
+    - 支持minio存储
+    - 支持多版本域名映射
