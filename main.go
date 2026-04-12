@@ -3,12 +3,13 @@ package main
 import (
 	"crypto/tls"
 	"errors"
-	handler2 "kenaito-vhost-gateway/src/handler"
 	"log"
 	"net/http"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"kenaito-vhost-gateway/src/controller"
+	handler2 "kenaito-vhost-gateway/src/handler"
 	"kenaito-vhost-gateway/src/infra"
 	"kenaito-vhost-gateway/src/service/config"
 	serverService "kenaito-vhost-gateway/src/service/server"
@@ -33,13 +34,16 @@ func main() {
 	// 创建服务层实例
 	srvService := serverService.NewServerService()
 
-	// 创建 HTTP 处理器
+	// 创建 HTTP 处理器（虚拟主机）
 	appConfig := infra.GetAppConfig()
 	handler := &handler2.VHostHandler{
 		MinioClient:   infra.GetMinioClient(),
 		Bucket:        appConfig.MinioBucket,
 		ServerService: srvService,
 	}
+
+	// 创建 API 路由器（管理接口）
+	apiRouter := controller.NewRouter()
 
 	httpAddr := global.HttpAddr
 	if httpAddr == "" {
@@ -48,6 +52,10 @@ func main() {
 	httpsAddr := global.HttpsAddr
 	if httpsAddr == "" {
 		httpsAddr = ":443"
+	}
+	adminPort := appConfig.AdminPort
+	if adminPort == "" {
+		adminPort = ":8080"
 	}
 	if global.MaxBodySize == 0 {
 		global.MaxBodySize = 5 << 20
@@ -65,6 +73,21 @@ func main() {
 		log.Printf("HTTP 服务启动，监听 %s", httpAddr)
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("HTTP 服务失败: %v", err)
+		}
+	}()
+
+	// 启动管理 API 服务器（独立端口）
+	adminServer := &http.Server{
+		Addr:           adminPort,
+		Handler:        apiRouter,
+		ReadTimeout:    30 * time.Second,
+		WriteTimeout:   30 * time.Second,
+		MaxHeaderBytes: maxHeaderBytes,
+	}
+	go func() {
+		log.Printf("管理 API 服务启动，监听 %s", adminPort)
+		if err := adminServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("管理 API 服务失败: %v", err)
 		}
 	}()
 

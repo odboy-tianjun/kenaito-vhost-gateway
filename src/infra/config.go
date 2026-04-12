@@ -18,6 +18,7 @@ type AppConfig struct {
 	MinioSecretKey          string // MinIO 秘密密钥
 	MinioUseSsl             bool   // MinIO 是否使用 SSL
 	MinioBucket             string // MinIO 默认存储桶名称
+	AdminPort               string // 管理API端口（Controller端口）
 }
 
 var appConfig *AppConfig
@@ -44,6 +45,7 @@ func LoadAppConfig() *AppConfig {
 		MinioSecretKey:          p.GetString("minio.secretKey", ""),
 		MinioUseSsl:             p.GetBool("minio.useSsl", false),
 		MinioBucket:             p.GetString("minio.bucket", "web-static"),
+		AdminPort:               p.GetString("admin.port", ":8080"),
 	}
 
 	log.Println("应用配置文件加载成功")
