@@ -86,7 +86,7 @@ func (h *VHostHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		host = host[:colonIdx]
 	}
 
-	// 1. 查询域名主表获取 active_version
+	// 查询域名主表获取 active_version
 	currentServer, err := h.ServerService.GetServerByName(host)
 	if err != nil {
 		log.Printf("查询域名配置失败: %v", err)
@@ -110,19 +110,34 @@ func (h *VHostHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. 根据域名和 active_version 查询版本表获取 bucket_path
-	version, err := h.ServerService.GetServerVersion(host, currentServer.ActiveVersion)
+	// 根据header判断是否灰度请求
+	targetVersion := currentServer.ActiveVersion
+	if currentServer.GrayHeaderKey != "" && currentServer.GrayHeaderValue != "" {
+		headerValue := r.Header.Get(currentServer.GrayHeaderKey)
+		if headerValue == currentServer.GrayHeaderValue {
+			if currentServer.GrayVersion == "" {
+				log.Printf("检测到灰度请求，但灰度版本未配置: host=%s, header[%s]=%s", host, currentServer.GrayHeaderKey, headerValue)
+				http.Error(w, "Gray version is not configured", http.StatusServiceUnavailable)
+				return
+			}
+			targetVersion = currentServer.GrayVersion
+			log.Printf("检测到灰度请求: host=%s, header[%s]=%s, 使用灰度版本: %s", host, currentServer.GrayHeaderKey, headerValue, targetVersion)
+		}
+	}
+
+	// 根据域名和 active_version 查询版本表获取 bucket_path
+	version, err := h.ServerService.GetServerVersion(host, targetVersion)
 	if err != nil {
 		log.Printf("查询版本配置失败: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 	if version == nil {
-		log.Printf("域名 %s 的版本 %s 不存在", host, currentServer.ActiveVersion)
+		log.Printf("域名 %s 的版本 %s 不存在", host, targetVersion)
 		http.Error(w, "Version not found", http.StatusNotFound)
 		return
 	}
 
-	// 3. 从 MinIO 服务静态文件
+	// 从 MinIO 服务静态文件
 	h.serveFromMinIO(w, r, version.BucketPath)
 }

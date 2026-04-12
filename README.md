@@ -1,6 +1,6 @@
 # kenaito-vhost-gateway
 
-[English Version](README_EN.md) | [中文版](readme.md)
+[English Version](README_EN.md) | [中文版](README.md)
 
 基于 Go 语言开发的多域名 HTTPS 静态文件代理网关，支持从 MinIO 对象存储动态加载静态资源、版本管理、自动部署等功能。
 
@@ -134,7 +134,7 @@ curl -X POST http://localhost:8080/api/config/global/get
 
 ```bash
 curl -X POST http://localhost:8080/api/config/global/update \
-  -H "Content-Type: application/json" \
+  -H "Content-Type: application/json;charset=utf8" \
   -d '{
     "httpAddr": ":80",
     "httpsAddr": ":443",
@@ -173,7 +173,7 @@ curl -X POST http://localhost:8080/api/servers/list
 
 ```bash
 curl -X POST http://localhost:8080/api/servers/get \
-  -H "Content-Type: application/json" \
+  -H "Content-Type: application/json;charset=utf8" \
   -d '{"id": 1}'
 ```
 
@@ -181,7 +181,7 @@ curl -X POST http://localhost:8080/api/servers/get \
 
 ```bash
 curl -X POST http://localhost:8080/api/servers/create \
-  -H "Content-Type: application/json" \
+  -H "Content-Type: application/json;charset=utf8" \
   -d '{
     "serverName": "example.com",
     "enableHttps": false
@@ -192,7 +192,7 @@ curl -X POST http://localhost:8080/api/servers/create \
 
 ```bash
 curl -X POST http://localhost:8080/api/servers/update \
-  -H "Content-Type: application/json" \
+  -H "Content-Type: application/json;charset=utf8" \
   -d '{
     "id": 1,
     "serverName": "example.com",
@@ -205,7 +205,7 @@ curl -X POST http://localhost:8080/api/servers/update \
 
 ```bash
 curl -X POST http://localhost:8080/api/servers/delete \
-  -H "Content-Type: application/json" \
+  -H "Content-Type: application/json;charset=utf8" \
   -d '{"id": 1}'
 ```
 
@@ -215,7 +215,7 @@ curl -X POST http://localhost:8080/api/servers/delete \
 
 ```bash
 curl -X POST http://localhost:8080/api/servers/deploy \
-  -H "Content-Type: application/json" \
+  -H "Content-Type: application/json;charset=utf8" \
   -d '{
     "localDir": "E:\\DevFiles\\dist\\myapp",
     "serverName": "example.com",
@@ -256,7 +256,7 @@ curl -X POST http://localhost:8080/api/servers/deploy \
 
 ```bash
 curl -X POST http://localhost:8080/api/servers/switchVersion \
-  -H "Content-Type: application/json" \
+  -H "Content-Type: application/json;charset=utf8" \
   -d '{
     "id": 1,
     "version": "20260412090000"
@@ -305,12 +305,14 @@ kenaito-vhost-gateway/
 - **v1.0.3**
     - MinIO 对象存储集成
     - 多版本域名映射
+
 - **v1.0.4-release**
-    - MinIO 对象存储集成
-    - 多版本域名映射
     - 版本自动切换
     - 管理 API 接口
     - 配置外部化（properties 文件）
+
+- **v1.0.5-gray**
+    - 支持基于请求头的灰度版本
 
 ## 常见问题
 
@@ -328,7 +330,7 @@ admin.port=:8080
 
 ```bash
 curl -X POST http://localhost:8080/api/config/global/update \
-  -H "Content-Type: application/json" \
+  -H "Content-Type: application/json;charset=utf8" \
   -d '{
     "httpAddr": ":8080",
     "httpsAddr": ":8443",
