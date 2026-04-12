@@ -1,19 +1,3 @@
-/*
- Navicat Premium Dump SQL
-
- Source Server         : tianyiyun-mysql
- Source Server Type    : MySQL
- Source Server Version : 80025 (8.0.25)
- Source Host           : 219.151.187.115:3306
- Source Schema         : kenaito_vhost_gateway
-
- Target Server Type    : MySQL
- Target Server Version : 80025 (8.0.25)
- File Encoding         : 65001
-
- Date: 11/04/2026 10:50:59
-*/
-
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
