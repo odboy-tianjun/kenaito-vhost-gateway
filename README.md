@@ -1,5 +1,7 @@
 # kenaito-vhost-gateway
 
+[English Version](README_EN.md) | [中文版](readme.md)
+
 基于 Go 语言开发的多域名 HTTPS 静态文件代理网关，支持从 MinIO 对象存储动态加载静态资源、版本管理、自动部署等功能。
 
 ## 特性
