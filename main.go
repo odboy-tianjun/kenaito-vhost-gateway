@@ -8,7 +8,6 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
-	"kenaito-vhost-gateway/src/core"
 	"kenaito-vhost-gateway/src/infra"
 	"kenaito-vhost-gateway/src/service/config"
 	serverService "kenaito-vhost-gateway/src/service/server"
@@ -35,7 +34,7 @@ func main() {
 
 	// 创建 HTTP 处理器
 	appConfig := infra.GetAppConfig()
-	handler := &core.VHostHandler{
+	handler := &handler.VHostHandler{
 		MinioClient:   infra.GetMinioClient(),
 		Bucket:        appConfig.MinioBucket,
 		ServerService: srvService,
