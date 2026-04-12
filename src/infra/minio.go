@@ -2,10 +2,10 @@ package infra
 
 import (
 	"context"
+	"log"
+
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"kenaito-vhost-gateway/src/dal/dataobject"
-	"log"
 )
 
 var minioClient *minio.Client
@@ -14,16 +14,17 @@ var minioClient *minio.Client
 func InitMinioClient() error {
 	var err error
 
-	properties := GetAppProperties()
+	// 从应用配置中获取 MinIO 配置
+	config := GetAppConfig()
 
-	minioClient, err = minio.New(properties.MinioEndpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(properties.MinioAccessKey, properties.MinioSecretKey, ""),
-		Secure: properties.MinioUseSsl,
+	minioClient, err = minio.New(config.MinioEndpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(config.MinioAccessKey, config.MinioSecretKey, ""),
+		Secure: config.MinioUseSsl,
 	})
 	if err != nil {
 		return err
 	}
-	log.Printf("MinIO 客户端初始化成功，Endpoint: %s, Bucket: %s", properties.MinioEndpoint, properties.MinioBucket)
+	log.Printf("MinIO 客户端初始化成功，Endpoint: %s, Bucket: %s", config.MinioEndpoint, config.MinioBucket)
 	return nil
 }
 
@@ -33,15 +34,15 @@ func GetMinioClient() *minio.Client {
 }
 
 // CheckDefaultBucketExist 检查默认的存储桶是否已创建
-func CheckDefaultBucketExist(global *dataobject.GlobalConfig) bool {
-	properties := GetAppProperties()
+func CheckDefaultBucketExist() bool {
+	config := GetAppConfig()
 	ctx := context.Background()
-	exists, err := minioClient.BucketExists(ctx, properties.MinioBucket)
+	exists, err := minioClient.BucketExists(ctx, config.MinioBucket)
 	if err != nil {
 		log.Fatalf("检查 MinIO 存储桶失败: %v", err)
 	}
 	if !exists {
-		log.Fatalf("MinIO 存储桶 %s 不存在，请先创建", properties.MinioBucket)
+		log.Fatalf("MinIO 存储桶 %s 不存在，请先创建", config.MinioBucket)
 	}
 	return exists
 }

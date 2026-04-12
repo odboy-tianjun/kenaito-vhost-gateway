@@ -39,7 +39,7 @@ func LoadGlobalConfig() (*dataobject.GlobalConfig, error) {
 	}
 
 	// 检查存储桶是否存在
-	infra.CheckDefaultBucketExist(global)
+	infra.CheckDefaultBucketExist()
 
 	log.Println("全局配置加载成功")
 	return global, nil

@@ -3,8 +3,6 @@ package infra
 import (
 	"log"
 	"xorm.io/xorm"
-
-	"github.com/magiconair/properties"
 )
 
 var engine *xorm.Engine
@@ -16,19 +14,11 @@ func GetEngine() *xorm.Engine {
 
 // InitDatabase 初始化数据库连接（由 main 函数显式调用）
 func InitDatabase() error {
-	// 加载配置文件
-	p, err := properties.LoadFile("config.properties", properties.UTF8)
-	if err != nil {
-		return err
-	}
+	// 从应用配置中获取数据库连接字符串
+	config := GetAppConfig()
 
-	// 从配置文件中读取数据库连接字符串
-	dsn, ok := p.Get("database.dsn")
-	if !ok {
-		log.Fatal("配置文件中缺少 database.dsn 配置项")
-	}
-
-	engine, err = xorm.NewEngine("mysql", dsn)
+	var err error
+	engine, err = xorm.NewEngine("mysql", config.DatabaseDsn)
 	if err != nil {
 		return err
 	}

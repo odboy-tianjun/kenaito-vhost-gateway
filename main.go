@@ -3,17 +3,21 @@ package main
 import (
 	"crypto/tls"
 	"errors"
-	_ "github.com/go-sql-driver/mysql"
-	"kenaito-vhost-gateway/src/core"
-	"kenaito-vhost-gateway/src/dal/dataobject"
-	"kenaito-vhost-gateway/src/infra"
-	"kenaito-vhost-gateway/src/service/config"
 	"log"
 	"net/http"
 	"time"
+
+	_ "github.com/go-sql-driver/mysql"
+	"kenaito-vhost-gateway/src/core"
+	"kenaito-vhost-gateway/src/infra"
+	"kenaito-vhost-gateway/src/service/config"
+	serverService "kenaito-vhost-gateway/src/service/server"
 )
 
 func main() {
+	// 加载应用配置文件
+	infra.LoadAppConfig()
+
 	// 初始化数据库连接
 	err := infra.InitDatabase()
 	if err != nil {
@@ -26,10 +30,15 @@ func main() {
 		log.Fatalf("加载全局配置失败: %v", err)
 	}
 
-	properties := infra.GetAppProperties()
+	// 创建服务层实例
+	srvService := serverService.NewServerService()
+
+	// 创建 HTTP 处理器
+	appConfig := infra.GetAppConfig()
 	handler := &core.VHostHandler{
-		MinioClient: infra.GetMinioClient(),
-		Bucket:      properties.MinioBucket,
+		MinioClient:   infra.GetMinioClient(),
+		Bucket:        appConfig.MinioBucket,
+		ServerService: srvService,
 	}
 
 	httpAddr := global.HttpAddr
@@ -60,8 +69,7 @@ func main() {
 	}()
 
 	// 检查是否有启用 HTTPS 的域名
-	var httpsCount int64
-	httpsCount, err = infra.GetEngine().Where("enable_https = ?", true).Count(&dataobject.Server{})
+	httpsCount, err := srvService.CountHttpsServers()
 	if err != nil {
 		log.Printf("查询 HTTPS 主机失败: %v", err)
 	}

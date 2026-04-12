@@ -3,22 +3,24 @@ package core
 import (
 	"context"
 	"fmt"
-	"github.com/minio/minio-go/v7"
 	"io"
-	"kenaito-vhost-gateway/src/dal/dataobject"
 	"kenaito-vhost-gateway/src/infra"
+	"kenaito-vhost-gateway/src/service/server"
 	"log"
 	"mime"
 	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/minio/minio-go/v7"
 )
 
 // VHostHandler 虚拟主机处理器
 type VHostHandler struct {
-	MinioClient *minio.Client
-	Bucket      string
+	MinioClient   *minio.Client
+	Bucket        string
+	ServerService *server.ServerService // 域名服务
 }
 
 // serveFromMinIO 从 MinIO 读取文件
@@ -79,22 +81,19 @@ func (h *VHostHandler) serveFromMinIO(w http.ResponseWriter, r *http.Request, bu
 
 // ServeHTTP 实现 http.Handler 接口
 func (h *VHostHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	engine := infra.GetEngine()
-
 	host := r.Host
 	if colonIdx := strings.Index(host, ":"); colonIdx != -1 {
 		host = host[:colonIdx]
 	}
 
 	// 1. 查询域名主表获取 active_version
-	var server dataobject.Server
-	has, err := engine.Where("server_name = ?", host).Get(&server)
+	server, err := h.ServerService.GetServerByName(host)
 	if err != nil {
 		log.Printf("查询域名配置失败: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
-	if !has {
+	if server == nil {
 		log.Printf("未匹配域名 %s，返回 404", host)
 		http.Error(w, fmt.Sprintf("No such host: %s", host), http.StatusNotFound)
 		return
@@ -112,14 +111,13 @@ func (h *VHostHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. 根据域名和 active_version 查询版本表获取 bucket_path
-	var version dataobject.ServerVersion
-	has, err = engine.Where("server_name = ? AND version = ?", host, server.ActiveVersion).Get(&version)
+	version, err := h.ServerService.GetServerVersion(host, server.ActiveVersion)
 	if err != nil {
 		log.Printf("查询版本配置失败: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
-	if !has {
+	if version == nil {
 		log.Printf("域名 %s 的版本 %s 不存在", host, server.ActiveVersion)
 		http.Error(w, "Version not found", http.StatusNotFound)
 		return
