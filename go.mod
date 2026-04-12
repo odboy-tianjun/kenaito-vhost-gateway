@@ -4,6 +4,7 @@ go 1.25
 
 require (
 	github.com/go-sql-driver/mysql v1.9.3
+	github.com/magiconair/properties v1.8.10
 	github.com/minio/minio-go/v7 v7.0.100
 	xorm.io/xorm v1.3.9
 )
