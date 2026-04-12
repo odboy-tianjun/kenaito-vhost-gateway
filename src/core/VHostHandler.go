@@ -87,20 +87,20 @@ func (h *VHostHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 1. 查询域名主表获取 active_version
-	server, err := h.ServerService.GetServerByName(host)
+	currentServer, err := h.ServerService.GetServerByName(host)
 	if err != nil {
 		log.Printf("查询域名配置失败: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
-	if server == nil {
+	if currentServer == nil {
 		log.Printf("未匹配域名 %s，返回 404", host)
 		http.Error(w, fmt.Sprintf("No such host: %s", host), http.StatusNotFound)
 		return
 	}
 
 	// HTTP -> HTTPS 重定向
-	if r.TLS == nil && server.EnableHttps {
+	if r.TLS == nil && currentServer.EnableHttps {
 		target := "https://" + host + r.URL.Path
 		if r.URL.RawQuery != "" {
 			target += "?" + r.URL.RawQuery
@@ -111,14 +111,14 @@ func (h *VHostHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. 根据域名和 active_version 查询版本表获取 bucket_path
-	version, err := h.ServerService.GetServerVersion(host, server.ActiveVersion)
+	version, err := h.ServerService.GetServerVersion(host, currentServer.ActiveVersion)
 	if err != nil {
 		log.Printf("查询版本配置失败: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 	if version == nil {
-		log.Printf("域名 %s 的版本 %s 不存在", host, server.ActiveVersion)
+		log.Printf("域名 %s 的版本 %s 不存在", host, currentServer.ActiveVersion)
 		http.Error(w, "Version not found", http.StatusNotFound)
 		return
 	}

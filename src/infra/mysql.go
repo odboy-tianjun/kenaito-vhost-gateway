@@ -2,6 +2,7 @@ package infra
 
 import (
 	"log"
+	"time"
 	"xorm.io/xorm"
 )
 
@@ -23,15 +24,13 @@ func InitDatabase() error {
 		return err
 	}
 
-	// 设置最大空闲连接数
-	engine.SetMaxIdleConns(10)
-	// 设置最大打开连接数
-	engine.SetMaxOpenConns(100)
-	// 设置连接的最大生命周期（秒）
-	engine.SetConnMaxLifetime(300)
+	// 设置数据库连接池参数
+	engine.SetMaxIdleConns(config.DatabaseMaxIdleConns)
+	engine.SetMaxOpenConns(config.DatabaseMaxOpenConns)
+	engine.SetConnMaxLifetime(time.Duration(config.DatabaseConnMaxLifetime) * time.Second)
 
-	// 启用SQL日志（生产环境可关闭）
-	engine.ShowSQL(true)
+	// 启用SQL日志（生产环境建议关闭）
+	engine.ShowSQL(config.DatabaseShowSql)
 
 	log.Println("数据库连接初始化成功")
 	return nil

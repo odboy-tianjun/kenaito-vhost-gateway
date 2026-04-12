@@ -8,12 +8,16 @@ import (
 
 // AppConfig 应用配置结构体，包含所有从配置文件读取的配置项
 type AppConfig struct {
-	DatabaseDsn    string // 数据库连接字符串
-	MinioEndpoint  string // MinIO 服务端点
-	MinioAccessKey string // MinIO 访问密钥
-	MinioSecretKey string // MinIO 秘密密钥
-	MinioUseSsl    bool   // MinIO 是否使用 SSL
-	MinioBucket    string // MinIO 默认存储桶名称
+	DatabaseDsn             string // 数据库连接字符串
+	DatabaseShowSql         bool   // 是否打印SQL
+	DatabaseMaxIdleConns    int    // 最大空闲连接数
+	DatabaseMaxOpenConns    int    // 最大打开连接数
+	DatabaseConnMaxLifetime int    // 连接的最大生命周期（秒）
+	MinioEndpoint           string // MinIO 服务端点
+	MinioAccessKey          string // MinIO 访问密钥
+	MinioSecretKey          string // MinIO 秘密密钥
+	MinioUseSsl             bool   // MinIO 是否使用 SSL
+	MinioBucket             string // MinIO 默认存储桶名称
 }
 
 var appConfig *AppConfig
@@ -30,12 +34,16 @@ func LoadAppConfig() *AppConfig {
 	}
 
 	appConfig = &AppConfig{
-		DatabaseDsn:    p.GetString("database.dsn", ""),
-		MinioEndpoint:  p.GetString("minio.endpoint", ""),
-		MinioAccessKey: p.GetString("minio.accessKey", ""),
-		MinioSecretKey: p.GetString("minio.secretKey", ""),
-		MinioUseSsl:    p.GetBool("minio.useSsl", false),
-		MinioBucket:    p.GetString("minio.bucket", "web-static"),
+		DatabaseDsn:             p.GetString("database.dsn", ""),
+		DatabaseShowSql:         p.GetBool("database.showSql", false),
+		DatabaseMaxIdleConns:    p.GetInt("database.maxIdleConns", 10),
+		DatabaseMaxOpenConns:    p.GetInt("database.maxOpenConns", 100),
+		DatabaseConnMaxLifetime: p.GetInt("database.connMaxLifetime", 300),
+		MinioEndpoint:           p.GetString("minio.endpoint", ""),
+		MinioAccessKey:          p.GetString("minio.accessKey", ""),
+		MinioSecretKey:          p.GetString("minio.secretKey", ""),
+		MinioUseSsl:             p.GetBool("minio.useSsl", false),
+		MinioBucket:             p.GetString("minio.bucket", "web-static"),
 	}
 
 	log.Println("应用配置文件加载成功")
