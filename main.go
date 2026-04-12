@@ -19,37 +19,6 @@ import (
 	"xorm.io/xorm"
 )
 
-// Server 对应 servers 表
-type Server struct {
-	Id            int    `xorm:"pk autoincr"`
-	ServerName    string `xorm:"unique notnull"`
-	ActiveVersion string `xorm:"default 'v1'"`
-	EnableHttps   bool   `xorm:"default 0"`
-}
-
-// ServerVersion 对应 server_versions 表（无 root 字段）
-type ServerVersion struct {
-	Id         int    `xorm:"pk autoincr"`
-	ServerName string `xorm:"notnull"`
-	Version    string `xorm:"notnull"`
-	BucketPath string `xorm:"notnull"`
-}
-
-// GlobalConfig 对应 global_config 表
-type GlobalConfig struct {
-	Id             int    `xorm:"pk autoincr"`
-	HttpAddr       string `xorm:"default ':80'"`
-	HttpsAddr      string `xorm:"default ':443'"`
-	MaxBodySize    int    `xorm:"default 5242880"`
-	CertPem        string `xorm:"text notnull"`
-	KeyPem         string `xorm:"text notnull"`
-	MinioEndpoint  string `xorm:"notnull"`
-	MinioAccessKey string `xorm:"notnull"`
-	MinioSecretKey string `xorm:"notnull"`
-	MinioUseSsl    bool   `xorm:"default 0"`
-	MinioBucket    string `xorm:"notnull"`
-}
-
 // vhostHandler 虚拟主机处理器
 type vhostHandler struct {
 	engine      *xorm.Engine
