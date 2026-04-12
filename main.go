@@ -91,6 +91,15 @@ func main() {
 		MinVersion:   tls.VersionTLS12,
 	}
 
+	// 测试目录上传
+	//infra.UploadDirectoryToMinio("E:\\DevFiles\\dist\\cutejava-front", "/cutejava/v4")
+	// 测试版本更新
+	//ss := serverService.NewServerService()
+	//err, _ = ss.UploadDirWithServer("E:\\DevFiles\\dist\\cutejava-front", "cutejava.odboy.cn", "cutejava-front", true)
+	//if err != nil {
+	//	return
+	//}
+
 	httpsServer := &http.Server{
 		Addr:           httpsAddr,
 		Handler:        handler,
