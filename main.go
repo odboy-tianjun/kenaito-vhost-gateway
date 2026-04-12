@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/tls"
 	"errors"
+	handler2 "kenaito-vhost-gateway/src/handler"
 	"log"
 	"net/http"
 	"time"
@@ -34,7 +35,7 @@ func main() {
 
 	// 创建 HTTP 处理器
 	appConfig := infra.GetAppConfig()
-	handler := &handler.VHostHandler{
+	handler := &handler2.VHostHandler{
 		MinioClient:   infra.GetMinioClient(),
 		Bucket:        appConfig.MinioBucket,
 		ServerService: srvService,
