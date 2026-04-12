@@ -1,5 +1,7 @@
 # kenaito-vhost-gateway
 
+[English Version](README_EN.md) | [中文版](readme.md)
+
 A multi-domain HTTPS static file proxy gateway developed in Go, supporting dynamic loading of static resources from MinIO object storage, version management, and automated deployment.
 
 ## Features
