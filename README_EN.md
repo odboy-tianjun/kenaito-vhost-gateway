@@ -48,23 +48,6 @@ MinIO object storage, version management, and automated deployment.
 
 Edit the `config.properties` file:
 
-```properties
-# Database Configuration
-database.dsn=root:password@tcp(localhost:3306)/kenaito_vhost_gateway?charset=utf8mb4&parseTime=True&loc=Local
-database.showSql=true
-database.maxIdleConns=10
-database.maxOpenConns=100
-database.connMaxLifetime=300
-# MinIO Configuration
-minio.endpoint=localhost:9000
-minio.accessKey=minioadmin
-minio.secretKey=minioadmin
-minio.useSsl=false
-minio.bucket=web-static
-# Management API Port
-admin.port=:8080
-```
-
 ### 3. Database Initialization
 
 Execute SQL scripts to create database tables:

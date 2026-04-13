@@ -47,23 +47,6 @@
 
 编辑 `config.properties` 文件：
 
-```properties
-# 数据库配置
-database.dsn=root:password@tcp(localhost:3306)/kenaito_vhost_gateway?charset=utf8mb4&parseTime=True&loc=Local
-database.showSql=true
-database.maxIdleConns=10
-database.maxOpenConns=100
-database.connMaxLifetime=300
-# MinIO 配置
-minio.endpoint=localhost:9000
-minio.accessKey=minioadmin
-minio.secretKey=minioadmin
-minio.useSsl=false
-minio.bucket=web-static
-# 管理 API 端口
-admin.port=:8080
-```
-
 ### 3. 数据库初始化
 
 执行 SQL 脚本创建数据库表：
