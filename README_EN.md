@@ -310,7 +310,6 @@ kenaito-vhost-gateway/
 - **v1.0.4-release**
     - Automatic version switching
     - Management API endpoints
-    - Externalized configuration (properties file)
 
 - **v1.0.5-gray**
     - Support grayscale version based on request headers

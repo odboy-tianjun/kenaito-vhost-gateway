@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"kenaito-vhost-gateway/src/dal/dataobject"
 	"kenaito-vhost-gateway/src/infra"
+	"kenaito-vhost-gateway/src/infra/oss"
 	"log"
 )
 
@@ -33,13 +34,13 @@ func LoadGlobalConfig() (*dataobject.GlobalConfig, error) {
 	globalConfig = global
 
 	// 初始化 MinIO 客户端
-	err = infra.InitMinioClient()
+	err = oss.InitMinioClient()
 	if err != nil {
 		return nil, fmt.Errorf("初始化 MinIO 客户端失败: %v", err)
 	}
 
 	// 检查存储桶是否存在
-	infra.CheckDefaultBucketExist()
+	oss.CheckDefaultBucketExist()
 
 	log.Println("全局配置加载成功")
 	return global, nil

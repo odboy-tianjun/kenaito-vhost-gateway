@@ -1,9 +1,10 @@
-package infra
+package oss
 
 import (
 	"context"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"kenaito-vhost-gateway/src/infra"
 	"log"
 	"mime"
 	"os"
@@ -17,17 +18,20 @@ var minioClient *minio.Client
 func InitMinioClient() error {
 	var err error
 
-	// 从应用配置中获取 MinIO 配置
-	config := GetAppConfig()
+	// 从应用配置中获取 OSS 配置
+	config := infra.GetAppConfig()
 
-	minioClient, err = minio.New(config.MinioEndpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(config.MinioAccessKey, config.MinioSecretKey, ""),
-		Secure: config.MinioUseSsl,
-	})
-	if err != nil {
-		return err
+	if "minio" == config.OssType {
+		minioClient, err = minio.New(config.OssEndpoint, &minio.Options{
+			Creds:  credentials.NewStaticV4(config.OssAccessKey, config.OssSecretKey, ""),
+			Secure: config.OssUseSsl,
+		})
+		if err != nil {
+			return err
+		}
+		log.Printf("MinIO 客户端初始化成功，Endpoint: %s, Bucket: %s", config.OssEndpoint, config.OssBucket)
 	}
-	log.Printf("MinIO 客户端初始化成功，Endpoint: %s, Bucket: %s", config.MinioEndpoint, config.MinioBucket)
+
 	return nil
 }
 
@@ -38,14 +42,14 @@ func GetMinioClient() *minio.Client {
 
 // CheckDefaultBucketExist 检查默认的存储桶是否已创建
 func CheckDefaultBucketExist() bool {
-	config := GetAppConfig()
+	config := infra.GetAppConfig()
 	ctx := context.Background()
-	exists, err := minioClient.BucketExists(ctx, config.MinioBucket)
+	exists, err := minioClient.BucketExists(ctx, config.OssBucket)
 	if err != nil {
 		log.Fatalf("检查 MinIO 存储桶失败: %v", err)
 	}
 	if !exists {
-		log.Fatalf("MinIO 存储桶 %s 不存在，请先创建", config.MinioBucket)
+		log.Fatalf("MinIO 存储桶 %s 不存在，请先创建", config.OssBucket)
 	}
 	return exists
 }
@@ -54,7 +58,7 @@ func CheckDefaultBucketExist() bool {
 // localDir: 本地文件夹路径
 // minioPrefix: MinIO 中的目标路径前缀（如 "web/v1.0/"）
 func UploadDirectoryToMinio(localDir string, minioPrefix string) error {
-	config := GetAppConfig()
+	config := infra.GetAppConfig()
 	ctx := context.Background()
 
 	// 确保本地目录存在
@@ -113,7 +117,7 @@ func UploadDirectoryToMinio(localDir string, minioPrefix string) error {
 		}
 
 		// 上传文件到 MinIO
-		_, err = minioClient.PutObject(ctx, config.MinioBucket, objectName, file, fileInfo.Size(), minio.PutObjectOptions{
+		_, err = minioClient.PutObject(ctx, config.OssBucket, objectName, file, fileInfo.Size(), minio.PutObjectOptions{
 			ContentType: contentType,
 		})
 		if err != nil {
@@ -121,7 +125,7 @@ func UploadDirectoryToMinio(localDir string, minioPrefix string) error {
 		}
 
 		uploadCount++
-		log.Printf("已上传: %s -> %s/%s", filePath, config.MinioBucket, objectName)
+		log.Printf("已上传: %s -> %s/%s", filePath, config.OssBucket, objectName)
 		return nil
 	})
 
@@ -129,6 +133,6 @@ func UploadDirectoryToMinio(localDir string, minioPrefix string) error {
 		return err
 	}
 
-	log.Printf("上传完成，共上传 %d 个文件到 %s/%s", uploadCount, config.MinioBucket, minioPrefix)
+	log.Printf("上传完成，共上传 %d 个文件到 %s/%s", uploadCount, config.OssBucket, minioPrefix)
 	return nil
 }

@@ -309,7 +309,6 @@ kenaito-vhost-gateway/
 - **v1.0.4-release**
     - 版本自动切换
     - 管理 API 接口
-    - 配置外部化（properties 文件）
 
 - **v1.0.5-gray**
     - 支持基于请求头的灰度版本
