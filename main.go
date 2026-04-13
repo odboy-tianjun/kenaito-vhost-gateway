@@ -39,7 +39,7 @@ func main() {
 	appConfig := infra.GetAppConfig()
 	handler := &handler2.VHostHandler{
 		MinioClient:   oss.GetMinioClient(),
-		Bucket:        appConfig.MinioBucket,
+		Bucket:        appConfig.OssBucket,
 		ServerService: srvService,
 	}
 
