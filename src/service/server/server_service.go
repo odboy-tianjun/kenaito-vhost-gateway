@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"kenaito-vhost-gateway/src/dal/dataobject"
 	"kenaito-vhost-gateway/src/infra"
+	"kenaito-vhost-gateway/src/infra/oss"
 	"log"
 	"time"
 	"xorm.io/xorm"
@@ -90,7 +91,7 @@ func (s *ServerService) UploadDirWithServer(localDir string, serverName string, 
 
 	// 上传文件到 MinIO
 	log.Printf("开始上传目录 %s 到 MinIO: %s", localDir, minioPrefix)
-	err = infra.UploadDirectoryToMinio(localDir, minioPrefix)
+	err = oss.UploadDirectoryToMinio(localDir, minioPrefix)
 	if err != nil {
 		return fmt.Errorf("上传文件到 MinIO 失败: %v", err), ""
 	}

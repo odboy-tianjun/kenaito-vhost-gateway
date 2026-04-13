@@ -2,7 +2,8 @@
 
 [English Version](README_EN.md) | [中文版](readme.md)
 
-A multi-domain HTTPS static file proxy gateway developed in Go, supporting dynamic loading of static resources from MinIO object storage, version management, and automated deployment.
+A multi-domain HTTPS static file proxy gateway developed in Go, supporting dynamic loading of static resources from
+MinIO object storage, version management, and automated deployment.
 
 ## Features
 
@@ -31,6 +32,7 @@ A multi-domain HTTPS static file proxy gateway developed in Go, supporting dynam
 ```
 
 **Port Description:**
+
 - **80/443**: Virtual host service ports (HTTP/HTTPS) for handling actual domain access requests
 - **8080**: Management API port for configuration management and deployment interfaces
 
@@ -53,14 +55,12 @@ database.showSql=true
 database.maxIdleConns=10
 database.maxOpenConns=100
 database.connMaxLifetime=300
-
 # MinIO Configuration
 minio.endpoint=localhost:9000
 minio.accessKey=minioadmin
 minio.secretKey=minioadmin
 minio.useSsl=false
 minio.bucket=web-static
-
 # Management API Port
 admin.port=:8080
 ```
@@ -76,7 +76,7 @@ mysql -u root -p < doc/kenaito_vhost_gateway_v1.0.3.sql
 Insert initial global configuration:
 
 ```sql
-INSERT INTO global_config (id, http_addr, https_addr, max_body_size, cert_pem, key_pem) 
+INSERT INTO global_config (id, http_addr, https_addr, max_body_size, cert_pem, key_pem)
 VALUES (1, ':80', ':443', 5242880, '-----BEGIN CERTIFICATE-----...', '-----BEGIN PRIVATE KEY-----...');
 ```
 
@@ -91,6 +91,7 @@ go build -o kenaito-vhost-gateway main.go
 ```
 
 After startup, you will see:
+
 ```
 Application configuration loaded successfully
 Database connection initialized successfully
@@ -114,6 +115,7 @@ curl -X POST http://localhost:8080/api/config/global/get
 ```
 
 Response:
+
 ```json
 {
   "code": 200,
@@ -152,6 +154,7 @@ curl -X POST http://localhost:8080/api/servers/list
 ```
 
 Response:
+
 ```json
 {
   "code": 200,
@@ -223,12 +226,14 @@ curl -X POST http://localhost:8080/api/servers/deploy \
 ```
 
 **Parameters:**
+
 - `localDir`: Local build output directory path
 - `serverName`: Domain name (e.g., `example.com`)
 - `appName`: Application name (used for MinIO path classification)
 - `autoSwitch`: Whether to automatically switch to the new version (true/false)
 
 Response:
+
 ```json
 {
   "code": 200,
@@ -241,6 +246,7 @@ Response:
 ```
 
 **Deployment Process:**
+
 1. Check if domain exists, create automatically if not
 2. Generate version number (format: yyyyMMddHHmmss)
 3. Upload local directory to MinIO (path: `appName/version/`)
@@ -291,24 +297,29 @@ kenaito-vhost-gateway/
 ## Version History
 
 - **v1.0.0**
-  - Basic multi-domain static file proxy
-  - JSON configuration file
-  
+    - Basic multi-domain static file proxy
+    - JSON configuration file
+
 - **v1.0.1**
-  - MySQL database configuration support
-  
+    - MySQL database configuration support
+
 - **v1.0.3**
-  - MinIO object storage integration
-  - Multi-version domain mapping
-  - Automatic version switching
-  - Management API endpoints
-  - Externalized configuration (properties file)
+    - MinIO object storage integration
+    - Multi-version domain mapping
+
+- **v1.0.4-release**
+    - Automatic version switching
+    - Management API endpoints
+
+- **v1.0.5-gray**
+    - Support grayscale version based on request headers
 
 ## FAQ
 
 ### 1. How to change the Management API port?
 
 Edit the `config.properties` file:
+
 ```properties
 admin.port=:9090
 ```
@@ -316,6 +327,7 @@ admin.port=:9090
 ### 2. How to change the virtual host ports?
 
 Update global configuration via API:
+
 ```bash
 curl -X POST http://localhost:8080/api/config/global/update \
   -H "Content-Type: application/json" \
@@ -339,7 +351,9 @@ curl -X POST http://localhost:8080/api/servers/switchVersion \
 
 ### 4. What if MinIO bucket doesn't exist?
 
-The program will automatically check the bucket at startup and report an error if it doesn't exist. Please create the bucket in MinIO console first:
+The program will automatically check the bucket at startup and report an error if it doesn't exist. Please create the
+bucket in MinIO console first:
+
 ```bash
 # Using mc command line tool
 mc mb myminio/web-static
